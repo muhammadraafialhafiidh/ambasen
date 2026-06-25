@@ -26,5 +26,5 @@ class ApiConfig {
   static const String mahasiswaIzinApi = '/mahasiswa/izin/api';
   static String mahasiswaIzinDelete(int id) => '/mahasiswa/izin/api/$id';
 
-  static const String profileEdit = '/profile';
+  static const String profileEdit = '/profile/api';
 }

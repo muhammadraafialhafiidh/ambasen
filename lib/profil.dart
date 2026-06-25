@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'services/auth_service.dart';
 import 'services/api_config.dart';
 import 'services/api_service.dart';
+import 'services/mahasiswa_service.dart';
 import 'dashboard.dart';
 import 'list_matakuliah.dart';
 import 'scan_qr.dart';
@@ -22,7 +23,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
   final _session = SessionManager.instance;
 
   Map<String, dynamic>? _dashboardData;
-  bool _isLoadingDashboard = true;
+  bool _isLoading = true;
 
   final Color _maroon = const Color(0xFF800020);
   final Color _maroonDark = const Color(0xFF5A0016);
@@ -31,24 +32,34 @@ class _ProfilScreenState extends State<ProfilScreen> {
   @override
   void initState() {
     super.initState();
-    _loadDashboardData();
+    _initializeData();
   }
 
-  Future<void> _loadDashboardData() async {
+  Future<void> _initializeData() async {
+    // Load profile fields and dashboard data in parallel.
+    // Profile fields (email, jurusan, angkatan, noHp, address, etc.)
+    // must be synced into SessionManager.user so Informasi Pribadi
+    // shows complete data on first open.
+    final results = await Future.wait([
+      MahasiswaService.instance.syncProfileFields(),
+      _loadDashboardDataAsync(),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  Future<Map<String, dynamic>?> _loadDashboardDataAsync() async {
     try {
       final response = await ApiService.instance.get(
         ApiConfig.mahasiswaDashboardApi,
       );
-      if (!mounted) return;
-      setState(() {
-        _dashboardData = response.data;
-        _isLoadingDashboard = false;
-      });
+      _dashboardData = response.data;
+      return response.data;
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isLoadingDashboard = false;
-      });
+      return null;
     }
   }
 
@@ -116,8 +127,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
               border: Border.all(color: Colors.white, width: 4),
             ),
             child: const Center(
-              child:
-                  Icon(Icons.qr_code_scanner, color: Colors.white, size: 30),
+              child: Icon(Icons.qr_code_scanner, color: Colors.white, size: 30),
             ),
           ),
         ),
@@ -236,7 +246,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          _session.user?.prodi ?? 'Program Studi',
+                          _session.user?.jurusan ?? 'Program Studi',
                           style: TextStyle(
                             color: Colors.white.withOpacity(0.7),
                             fontSize: 12,
@@ -260,8 +270,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
                       width: 1.5,
                     ),
                   ),
-                  child:
-                      const Icon(Icons.edit, color: Colors.white, size: 18),
+                  child: const Icon(Icons.edit, color: Colors.white, size: 18),
                 ),
               ),
             ],
@@ -428,28 +437,23 @@ class _ProfilScreenState extends State<ProfilScreen> {
   }
 
   Widget _buildInformasiPribadi() {
+    print("USER => ${_session.user}");
+    print("EMAIL => ${_session.user?.email}");
+    print("JURUSAN => ${_session.user?.jurusan}");
+    print("NOHP => ${_session.user?.noHp}");
     final user = _session.user;
     return _buildSectionCard(
       icon: Icons.person,
       title: 'Informasi Pribadi',
       child: Column(
         children: [
-          _buildInfoRow(
-            'Nama Lengkap',
-            _buildTextValue(user?.nama ?? '-'),
-          ),
-          _buildInfoRow(
-            'NIM',
-            _buildTextValue(user?.nim ?? '-'),
-          ),
-          _buildInfoRow(
-            'Program Studi',
-            _buildTextValue(user?.prodi ?? '-'),
-          ),
-          _buildInfoRow(
-            'Email',
-            _buildTextValue(user?.email ?? '-'),
-          ),
+          _buildInfoRow('Nama Lengkap', _buildTextValue(user?.nama ?? '-')),
+          _buildInfoRow('NIM', _buildTextValue(user?.nim ?? '-')),
+          _buildInfoRow('Email', _buildTextValue(user?.email ?? '-')),
+          _buildInfoRow('Program Studi', _buildTextValue(user?.jurusan ?? '-')),
+          _buildInfoRow('Angkatan', _buildTextValue(user?.angkatan ?? '-')),
+          _buildInfoRow('No. HP', _buildTextValue(user?.noHp ?? '-')),
+          _buildInfoRow('Alamat', _buildTextValue(user?.address ?? '-')),
         ],
       ),
     );
@@ -479,7 +483,8 @@ class _ProfilScreenState extends State<ProfilScreen> {
                   fit: StackFit.expand,
                   children: [
                     CircularProgressIndicator(
-                      value: ((_dashboardData?['attendancePercentage'] ?? 0)
+                      value:
+                          ((_dashboardData?['attendancePercentage'] ?? 0)
                               as num) /
                           100,
                       strokeWidth: 8,
@@ -501,8 +506,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
                           ),
                           const Text(
                             'Hadir',
-                            style:
-                                TextStyle(color: Colors.grey, fontSize: 10),
+                            style: TextStyle(color: Colors.grey, fontSize: 10),
                           ),
                         ],
                       ),
@@ -531,8 +535,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
                     const SizedBox(height: 4),
                     Text(
                       '$hadirCount / $totalPresensi pertemuan hadir',
-                      style:
-                          const TextStyle(color: Colors.grey, fontSize: 11),
+                      style: const TextStyle(color: Colors.grey, fontSize: 11),
                     ),
                     const SizedBox(height: 8),
                     Wrap(
@@ -638,8 +641,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                    builder: (context) => const ScanQrScreen()),
+                MaterialPageRoute(builder: (context) => const ScanQrScreen()),
               );
             },
             isLast: false,
@@ -709,10 +711,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
                     subtitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.grey.shade600,
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                   ),
                 ],
               ),
@@ -938,124 +937,199 @@ class _ProfilScreenState extends State<ProfilScreen> {
 
   void _showEditProfileModal() {
     final user = _session.user;
+
+    final nameCtrl = TextEditingController(text: user?.nama ?? '');
+    final phoneCtrl = TextEditingController(text: user?.phone ?? '');
+    final addressCtrl = TextEditingController(text: user?.address ?? '');
+    final jurusanCtrl = TextEditingController(text: user?.jurusan ?? '');
+    final angkatanCtrl = TextEditingController(text: user?.angkatan ?? '');
+    final noHpCtrl = TextEditingController(text: user?.noHp ?? '');
+
     showDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          contentPadding: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          content: SizedBox(
-            width: MediaQuery.of(context).size.width * 0.9,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 16,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient:
-                        LinearGradient(colors: [_maroonDark, _maroon]),
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(16),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.edit, color: Colors.white, size: 20),
-                          SizedBox(width: 8),
-                          Text(
-                            'Edit Profil',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ],
-                      ),
-                      InkWell(
-                        onTap: () => Navigator.pop(context),
-                        child: const Icon(
-                          Icons.close,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(20),
+      builder: (dialogCtx) {
+        bool isSaving = false;
+
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              contentPadding: EdgeInsets.zero,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              content: SizedBox(
+                width: MediaQuery.of(context).size.width * 0.9,
+                child: SingleChildScrollView(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      _buildTextField(
-                        'Nama Lengkap',
-                        user?.nama ?? '-',
-                      ),
-                      const SizedBox(height: 12),
-                      _buildTextField(
-                        'Email',
-                        user?.email ?? '-',
-                      ),
-                      const SizedBox(height: 12),
-                      _buildTextField(
-                        'NIM',
-                        user?.nim ?? '-',
-                      ),
-                      const SizedBox(height: 12),
-                      _buildTextField(
-                        'Program Studi',
-                        user?.prodi ?? '-',
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text(
-                          'Batal',
-                          style: TextStyle(color: Colors.grey),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 16,
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content:
-                                  Text('Profil berhasil diperbarui!'),
-                              backgroundColor: Colors.green,
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _maroon,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [_maroonDark, _maroon],
+                          ),
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(16),
                           ),
                         ),
-                        child: const Row(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Icon(Icons.save, size: 16, color: Colors.white),
-                            SizedBox(width: 4),
-                            Text(
-                              'Simpan',
-                              style: TextStyle(color: Colors.white),
+                            const Row(
+                              children: [
+                                Icon(Icons.edit, color: Colors.white, size: 20),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Edit Profil',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            InkWell(
+                              onTap: isSaving
+                                  ? null
+                                  : () => Navigator.pop(dialogCtx),
+                              child: const Icon(
+                                Icons.close,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildEditableField('Nama Lengkap', nameCtrl),
+                            const SizedBox(height: 12),
+                            _buildEditableField('No. HP', noHpCtrl),
+                            const SizedBox(height: 12),
+                            _buildEditableField(
+                              'Alamat',
+                              addressCtrl,
+                              maxLines: 3,
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: isSaving
+                                  ? null
+                                  : () => Navigator.pop(dialogCtx),
+                              child: const Text(
+                                'Batal',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton(
+                              onPressed: isSaving
+                                  ? null
+                                  : () async {
+                                      setDialogState(() {
+                                        isSaving = true;
+                                      });
+
+                                      final result = await MahasiswaService
+                                          .instance
+                                          .apiUpdateProfile(
+                                            name: nameCtrl.text.trim(),
+                                            phone: phoneCtrl.text.trim().isEmpty
+                                                ? null
+                                                : phoneCtrl.text.trim(),
+                                            address:
+                                                addressCtrl.text.trim().isEmpty
+                                                ? null
+                                                : addressCtrl.text.trim(),
+                                            jurusan:
+                                                jurusanCtrl.text.trim().isEmpty
+                                                ? null
+                                                : jurusanCtrl.text.trim(),
+                                            angkatan:
+                                                angkatanCtrl.text.trim().isEmpty
+                                                ? null
+                                                : angkatanCtrl.text.trim(),
+                                            noHp: noHpCtrl.text.trim().isEmpty
+                                                ? null
+                                                : noHpCtrl.text.trim(),
+                                          );
+
+                                      if (!dialogCtx.mounted) return;
+
+                                      Navigator.pop(dialogCtx);
+
+                                      // Refresh all profile fields (including email)
+                                      // from the profile API so Informasi Pribadi
+                                      // shows the latest data.
+                                      await MahasiswaService.instance
+                                          .syncProfileFields();
+
+                                      if (mounted) {
+                                        setState(() {});
+                                      }
+
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            result['message']?.toString() ??
+                                                'Profil berhasil diperbarui!',
+                                          ),
+                                          backgroundColor:
+                                              result['success'] == true
+                                              ? Colors.green
+                                              : Colors.red,
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      );
+                                    },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _maroon,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: isSaving
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Row(
+                                      children: [
+                                        Icon(
+                                          Icons.save,
+                                          size: 16,
+                                          color: Colors.white,
+                                        ),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'Simpan',
+                                          style: TextStyle(color: Colors.white),
+                                        ),
+                                      ],
+                                    ),
                             ),
                           ],
                         ),
@@ -1063,11 +1137,60 @@ class _ProfilScreenState extends State<ProfilScreen> {
                     ],
                   ),
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
+    );
+  }
+
+  Widget _buildEditableField(
+    String label,
+    TextEditingController controller, {
+    int maxLines = 1,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+            color: Color(0xFF444444),
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          maxLines: maxLines,
+          decoration: InputDecoration(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(
+                color: Color(0xFFE0E0E0),
+                width: 1.5,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(
+                color: Color(0xFFE0E0E0),
+                width: 1.5,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: _maroon, width: 2),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1091,8 +1214,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
                     vertical: 16,
                   ),
                   decoration: BoxDecoration(
-                    gradient:
-                        LinearGradient(colors: [_maroonDark, _maroon]),
+                    gradient: LinearGradient(colors: [_maroonDark, _maroon]),
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(16),
                     ),
@@ -1102,11 +1224,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
                     children: [
                       const Row(
                         children: [
-                          Icon(
-                            Icons.vpn_key,
-                            color: Colors.white,
-                            size: 20,
-                          ),
+                          Icon(Icons.vpn_key, color: Colors.white, size: 20),
                           SizedBox(width: 8),
                           Text(
                             'Ganti Password',
@@ -1140,11 +1258,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
                         isPassword: true,
                       ),
                       const SizedBox(height: 12),
-                      _buildTextField(
-                        'Password Baru',
-                        '',
-                        isPassword: true,
-                      ),
+                      _buildTextField('Password Baru', '', isPassword: true),
                       const SizedBox(height: 12),
                       _buildTextField(
                         'Konfirmasi Password Baru',
@@ -1172,8 +1286,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text(
-                                  'Password berhasil diperbarui!'),
+                              content: Text('Password berhasil diperbarui!'),
                               backgroundColor: Colors.green,
                               behavior: SnackBarBehavior.floating,
                             ),

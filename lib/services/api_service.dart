@@ -92,6 +92,30 @@ class ApiService {
     return location.contains('login');
   }
 
+  Future<Response<dynamic>> put(
+    String path, {
+    Map<String, dynamic>? data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+  }) async {
+    await init();
+
+    final headers = <String, dynamic>{
+      'Accept': 'application/json',
+      if (csrfToken != null) 'X-CSRF-TOKEN': csrfToken,
+    };
+
+    return _dio.put(
+      path,
+      data: data,
+      queryParameters: queryParameters,
+      options: (options ?? Options()).copyWith(
+        headers: {...?options?.headers, ...headers},
+        contentType: Headers.jsonContentType,
+      ),
+    );
+  }
+
   Future<Response<dynamic>> delete(
     String path, {
     Map<String, dynamic>? data,

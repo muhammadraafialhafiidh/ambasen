@@ -3,6 +3,11 @@ class UserSession {
   final String nim;
   final String? prodi;
   final String? email;
+  final String? phone;
+  final String? address;
+  final String? jurusan;
+  final String? angkatan;
+  final String? noHp;
   final double? kehadiranPersen;
   final int? totalHadir;
   final int? totalIzin;
@@ -15,6 +20,11 @@ class UserSession {
     required this.nim,
     this.prodi,
     this.email,
+    this.phone,
+    this.address,
+    this.jurusan,
+    this.angkatan,
+    this.noHp,
     this.kehadiranPersen,
     this.totalHadir,
     this.totalIzin,
@@ -42,6 +52,11 @@ class UserSession {
     String? nim,
     String? prodi,
     String? email,
+    String? phone,
+    String? address,
+    String? jurusan,
+    String? angkatan,
+    String? noHp,
     double? kehadiranPersen,
     int? totalHadir,
     int? totalIzin,
@@ -54,6 +69,11 @@ class UserSession {
       nim: nim ?? this.nim,
       prodi: prodi ?? this.prodi,
       email: email ?? this.email,
+      phone: phone ?? this.phone,
+      address: address ?? this.address,
+      jurusan: jurusan ?? this.jurusan,
+      angkatan: angkatan ?? this.angkatan,
+      noHp: noHp ?? this.noHp,
       kehadiranPersen: kehadiranPersen ?? this.kehadiranPersen,
       totalHadir: totalHadir ?? this.totalHadir,
       totalIzin: totalIzin ?? this.totalIzin,
@@ -65,10 +85,15 @@ class UserSession {
 
   factory UserSession.fromJson(Map<String, dynamic> json) {
     return UserSession(
-      nama: json['nama']?.toString() ?? 'Mahasiswa',
+      nama: (json['nama']?.toString()) ?? (json['name']?.toString()) ?? 'Mahasiswa',
       nim: json['nim']?.toString() ?? '-',
       prodi: json['prodi']?.toString(),
       email: json['email']?.toString(),
+      phone: json['phone']?.toString(),
+      address: json['address']?.toString(),
+      jurusan: json['jurusan']?.toString(),
+      angkatan: json['angkatan']?.toString(),
+      noHp: json['no_hp']?.toString(),
       kehadiranPersen: (json['kehadiran'] is num)
           ? (json['kehadiran'] as num).toDouble()
           : double.tryParse(json['kehadiran']?.toString() ?? ''),
@@ -96,6 +121,11 @@ class UserSession {
       'nim': nim,
       'prodi': prodi,
       'email': email,
+      'phone': phone,
+      'address': address,
+      'jurusan': jurusan,
+      'angkatan': angkatan,
+      'no_hp': noHp,
       'kehadiran': kehadiranPersen,
       'total_hadir': totalHadir,
       'total_izin': totalIzin,

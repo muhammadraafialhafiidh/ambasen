@@ -102,7 +102,44 @@ class AuthService {
       if (data is Map<String, dynamic>) {
         final userJson = data['mahasiswa'] as Map<String, dynamic>?;
         if (userJson != null) {
-          final user = UserSession.fromJson(userJson);
+          UserSession user = UserSession.fromJson(userJson);
+
+          // Sync fields from profile API (email, phone, address, etc.)
+          // Dashboard API may not include these fields
+          try {
+            final profile = await _api.get(ApiConfig.mahasiswaProfileApi);
+            if (_api.isSuccessfulGet(profile)) {
+              final raw = profile.data;
+              if (raw is Map<String, dynamic>) {
+                final inner = raw['data'] as Map<String, dynamic>? ?? raw;
+                user = user.copyWith(
+                  nama: user.nama != 'Mahasiswa'
+                      ? user.nama
+                      : (inner['name']?.toString() ?? inner['nama']?.toString()),
+                  prodi: user.prodi ?? inner['prodi']?.toString(),
+                  email: (user.email != null && user.email!.isNotEmpty)
+                      ? user.email
+                      : inner['email']?.toString(),
+                  phone: (user.phone != null && user.phone!.isNotEmpty)
+                      ? user.phone
+                      : inner['phone']?.toString(),
+                  address: (user.address != null && user.address!.isNotEmpty)
+                      ? user.address
+                      : inner['address']?.toString(),
+                  jurusan: (user.jurusan != null && user.jurusan!.isNotEmpty)
+                      ? user.jurusan
+                      : inner['jurusan']?.toString(),
+                  angkatan: (user.angkatan != null && user.angkatan!.isNotEmpty)
+                      ? user.angkatan
+                      : inner['angkatan']?.toString(),
+                  noHp: (user.noHp != null && user.noHp!.isNotEmpty)
+                      ? user.noHp
+                      : inner['no_hp']?.toString(),
+                );
+              }
+            }
+          } catch (_) {}
+
           _session.setUser(user);
           _session.isLoggedIn = true;
           await MahasiswaService.instance.loadMatakuliah();

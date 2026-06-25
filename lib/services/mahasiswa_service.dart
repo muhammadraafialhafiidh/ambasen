@@ -40,12 +40,14 @@ class MahasiswaService {
                 merged[dstKey] = data[srcKey];
               }
             }
+
             mergeIfAbsent('attendancePercentage', 'kehadiran');
             mergeIfAbsent('hadirCount', 'total_hadir');
             mergeIfAbsent('izinCount', 'total_izin');
             mergeIfAbsent('absenCount', 'total_alpha');
             mergeIfAbsent('totalPresensis', 'total_pertemuan');
-            if (!merged.containsKey('totalSks') && data.containsKey('totalSks')) {
+            if (!merged.containsKey('totalSks') &&
+                data.containsKey('totalSks')) {
               merged['total_sks'] = data['totalSks'];
             }
             user = UserSession.fromJson(merged);
@@ -54,30 +56,54 @@ class MahasiswaService {
       }
     } catch (_) {}
 
-    // Fallback: try profile JSON API
+    // Fallback: try profile JSON API (apiShow wraps fields inside 'data' key)
     if (user == null) {
       try {
         final profile = await _api.get(ApiConfig.mahasiswaProfileApi);
         if (_api.isSuccessfulGet(profile)) {
-          final data = profile.data;
-          if (data is Map<String, dynamic>) {
-            user = UserSession.fromJson(data);
+          final raw = profile.data;
+          if (raw is Map<String, dynamic>) {
+            // apiShow wraps everything inside 'data': {success: true, data: {...}}
+            final inner = raw['data'] as Map<String, dynamic>? ?? raw;
+            user = UserSession.fromJson(inner);
           }
         }
       } catch (_) {}
     }
 
-    // Always try to fetch prodi & email from the Profile API
-    // (Laravel returns: 'prodi' => $mahasiswaProfile?->jurusan, 'email' => $mahasiswaProfile?->email)
-    if (user != null && (user.prodi == null || user.email == null)) {
+    // Always try to fetch additional fields from the Profile API
+    // (Laravel apiShow wraps fields inside 'data' key)
+    if (user != null) {
       try {
         final profile = await _api.get(ApiConfig.mahasiswaProfileApi);
         if (_api.isSuccessfulGet(profile)) {
-          final profileData = profile.data;
-          if (profileData is Map<String, dynamic>) {
+          final raw = profile.data;
+          if (raw is Map<String, dynamic>) {
+            // Unwrap the 'data' key from apiShow response
+            final inner = raw['data'] as Map<String, dynamic>? ?? raw;
             user = user.copyWith(
-              prodi: user.prodi ?? profileData['prodi']?.toString(),
-              email: user.email ?? profileData['email']?.toString(),
+              nama: user.nama != 'Mahasiswa'
+                  ? user.nama
+                  : (inner['name']?.toString() ?? inner['nama']?.toString()),
+              prodi: user.prodi ?? inner['prodi']?.toString(),
+              email: (user.email != null && user.email!.isNotEmpty)
+                  ? user.email
+                  : inner['email']?.toString(),
+              phone: (user.phone != null && user.phone!.isNotEmpty)
+                  ? user.phone
+                  : inner['phone']?.toString(),
+              address: (user.address != null && user.address!.isNotEmpty)
+                  ? user.address
+                  : inner['address']?.toString(),
+              jurusan: (user.jurusan != null && user.jurusan!.isNotEmpty)
+                  ? user.jurusan
+                  : inner['jurusan']?.toString(),
+              angkatan: (user.angkatan != null && user.angkatan!.isNotEmpty)
+                  ? user.angkatan
+                  : inner['angkatan']?.toString(),
+              noHp: (user.noHp != null && user.noHp!.isNotEmpty)
+                  ? user.noHp
+                  : inner['no_hp']?.toString(),
             );
           }
         }
@@ -89,6 +115,102 @@ class MahasiswaService {
     );
 
     await loadMatakuliah();
+  }
+
+  /// Sync profile fields from profile API into the existing session user.
+  /// This is called after profile edit to ensure all fields (including email)
+  /// are refreshed in the UI.
+  Future<void> syncProfileFields() async {
+    print("SYNC PROFILE DIPANGGIL");
+    final oldUser = _session.user;
+    if (oldUser == null) return;
+
+    await _api.init();
+    try {
+      final profile = await _api.get(ApiConfig.mahasiswaProfileApi);
+      if (_api.isSuccessfulGet(profile)) {
+        final raw = profile.data;
+        if (raw is Map<String, dynamic>) {
+          final inner = raw['data'] as Map<String, dynamic>? ?? raw;
+          final profile = await _api.get(ApiConfig.mahasiswaProfileApi);
+
+          print("PROFILE STATUS => ${profile.statusCode}");
+          print("PROFILE DATA => ${profile.data}");
+          _session.user = oldUser.copyWith(
+            nama:
+                (inner['name']?.toString() ?? inner['nama']?.toString()) ??
+                oldUser.nama,
+            prodi: inner['prodi']?.toString() ?? oldUser.prodi,
+            email: inner['email']?.toString() ?? oldUser.email,
+            phone: inner['phone']?.toString() ?? oldUser.phone,
+            address: inner['address']?.toString() ?? oldUser.address,
+            jurusan: inner['jurusan']?.toString() ?? oldUser.jurusan,
+            angkatan: inner['angkatan']?.toString() ?? oldUser.angkatan,
+            noHp: inner['no_hp']?.toString() ?? oldUser.noHp,
+          );
+        }
+      }
+    } catch (e, s) {
+      print("PROFILE ERROR => $e");
+      print(s);
+    }
+  }
+
+  Future<Map<String, dynamic>> apiUpdateProfile({
+    required String name,
+    String? phone,
+    String? address,
+    String? jurusan,
+    String? angkatan,
+    String? noHp,
+  }) async {
+    await _api.init();
+
+    // Refresh CSRF token before PUT to avoid CSRF mismatch
+    // Use the HTML profile page (not the JSON API) so extractCsrfToken can find the token
+    await _api.refreshCsrf(path: ApiConfig.mahasiswaProfile);
+
+    final response = await _api.put(
+      ApiConfig.profileEdit,
+      data: {
+        'name': name,
+        'phone': phone,
+        'address': address,
+        'jurusan': jurusan,
+        'angkatan': angkatan,
+        'no_hp': noHp,
+      },
+    );
+
+    final data = response.data;
+    if (data is Map<String, dynamic>) {
+      if (data['success'] == true) {
+        // Update local session with returned data
+        final returned = data['data'] as Map<String, dynamic>?;
+        final oldUser = _session.user;
+        if (oldUser != null) {
+          _session.user = oldUser.copyWith(
+            nama: returned?['name']?.toString() ?? name,
+            phone: returned?['phone']?.toString() ?? phone,
+            address: returned?['address']?.toString() ?? address,
+            jurusan: returned?['jurusan']?.toString() ?? jurusan,
+            angkatan: returned?['angkatan']?.toString() ?? angkatan,
+            noHp: returned?['no_hp']?.toString() ?? noHp,
+          );
+        }
+        return {
+          'success': true,
+          'message':
+              data['message']?.toString() ?? 'Profil berhasil diperbarui.',
+        };
+      }
+      return {
+        'success': false,
+        'message': data['message']?.toString() ?? 'Gagal memperbarui profil.',
+      };
+    }
+
+    return {'success': false, 'message': 'Gagal memperbarui profil.'};
   }
 
   Future<List<Matakuliah>> loadMatakuliah() async {
